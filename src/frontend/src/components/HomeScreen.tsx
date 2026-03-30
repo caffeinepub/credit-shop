@@ -1,14 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertTriangle,
-  Clock,
-  Menu,
-  Plus,
-  ScanLine,
-  Search,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Clock, Menu, ScanLine, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
@@ -22,7 +14,6 @@ import {
   getSettings,
   isInactive,
 } from "../utils/format";
-import { AddCustomerSheet } from "./AddCustomerSheet";
 
 interface Props {
   navigate: (s: Screen) => void;
@@ -31,7 +22,6 @@ interface Props {
 
 export function HomeScreen({ navigate, onOpenSidebar }: Props) {
   const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const { data: customers, isLoading } = useAllCustomers();
   const settings = getSettings();
@@ -134,7 +124,7 @@ export function HomeScreen({ navigate, onOpenSidebar }: Props) {
               <Menu size={20} />
             </button>
             <div>
-              <h1 className="text-white text-xl font-bold">Credit Shop</h1>
+              <h1 className="text-white text-xl font-bold">Udhar</h1>
               <p className="text-white/60 text-xs mt-0.5">
                 {customers?.length || 0} customers · {formatCurrency(totalDue)}{" "}
                 due
@@ -191,7 +181,7 @@ export function HomeScreen({ navigate, onOpenSidebar }: Props) {
             </div>
             <p className="text-foreground font-semibold">No customers yet</p>
             <p className="text-muted-foreground text-sm mt-1">
-              Tap the + button to add your first customer
+              Go to Customers section to add your first customer
             </p>
           </div>
         )}
@@ -208,20 +198,6 @@ export function HomeScreen({ navigate, onOpenSidebar }: Props) {
             />
           ))}
       </div>
-
-      {/* FAB */}
-      <button
-        type="button"
-        data-ocid="home.add_customer.primary_button"
-        onClick={() => setAddOpen(true)}
-        className="fixed bottom-6 right-4 flex items-center gap-2 rounded-full px-5 py-3 shadow-lg text-sm font-bold z-20 text-white"
-        style={{ backgroundColor: "var(--slate-dark)" }}
-      >
-        <Plus size={18} />
-        Add Customer
-      </button>
-
-      <AddCustomerSheet open={addOpen} onOpenChange={setAddOpen} />
 
       {/* Customer Barcode Scanner Overlay */}
       {scannerOpen && (

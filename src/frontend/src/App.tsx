@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { CustomerBalance } from "./backend.d";
 import { BatchUdhaarScreen } from "./components/BatchUdhaarScreen";
 import { CustomerProfile } from "./components/CustomerProfile";
+import { CustomersScreen } from "./components/CustomersScreen";
+import { DashboardScreen } from "./components/DashboardScreen";
 import { HomeScreen } from "./components/HomeScreen";
 import { ProductsScreen } from "./components/ProductsScreen";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -10,28 +12,40 @@ import { Sidebar } from "./components/Sidebar";
 import { TransactionHistory } from "./components/TransactionHistory";
 
 export type Screen =
-  | { id: "home" }
+  | { id: "dashboard" }
+  | { id: "udhar" }
+  | { id: "home" } // legacy alias -> udhar
+  | { id: "customers" }
   | { id: "customerProfile"; customer: CustomerBalance }
   | { id: "transactionHistory"; customer: CustomerBalance }
   | { id: "batchUdhaar"; customer: CustomerBalance }
   | { id: "products" }
   | { id: "settings" };
 
-export type NavTab = "home" | "products" | "settings";
+export type NavTab =
+  | "dashboard"
+  | "udhar"
+  | "customers"
+  | "products"
+  | "settings";
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>({ id: "home" });
-  const [activeTab, setActiveTab] = useState<NavTab>("home");
+  const [screen, setScreen] = useState<Screen>({ id: "dashboard" });
+  const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigate = (s: Screen) => {
-    if (s.id === "home" || s.id === "products" || s.id === "settings") {
-      setActiveTab(s.id as NavTab);
-    }
+    if (s.id === "dashboard") setActiveTab("dashboard");
+    else if (s.id === "udhar" || s.id === "home") setActiveTab("udhar");
+    else if (s.id === "customers") setActiveTab("customers");
+    else if (s.id === "products") setActiveTab("products");
+    else if (s.id === "settings") setActiveTab("settings");
     setScreen(s);
   };
 
-  const goHome = () => navigate({ id: "home" });
+  const goHome = () => navigate({ id: "udhar" });
+
+  const isUdhar = screen.id === "udhar" || screen.id === "home";
 
   return (
     <div
@@ -46,8 +60,20 @@ export default function App() {
       />
 
       <main className="flex-1 overflow-hidden flex flex-col">
-        {screen.id === "home" && (
+        {screen.id === "dashboard" && (
+          <DashboardScreen
+            navigate={navigate}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        )}
+        {isUdhar && (
           <HomeScreen
+            navigate={navigate}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        )}
+        {screen.id === "customers" && (
+          <CustomersScreen
             navigate={navigate}
             onOpenSidebar={() => setSidebarOpen(true)}
           />

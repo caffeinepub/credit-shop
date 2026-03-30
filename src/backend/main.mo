@@ -37,6 +37,9 @@ actor {
     };
   };
 
+  // IMPORTANT: The Transaction module MUST keep the same name as the Transaction type.
+  // Motoko infers Transaction.compare implicitly when .sort() is called on [Transaction].
+  // Do NOT rename this module or remove the compare function -- sorting will silently break.
   type Transaction = {
     id : Nat;
     customerId : Nat;
@@ -261,6 +264,8 @@ actor {
     true;
   };
 
+  // Transaction.compare is inferred implicitly by Motoko from the Transaction module above.
+  // .sort() here uses Transaction.compare automatically -- do NOT remove the Transaction module.
   public query func getTransactionsForCustomer(customerId : Nat) : async [Transaction] {
     transactions.values().filter(func(t) { t.customerId == customerId }).toArray().sort();
   };

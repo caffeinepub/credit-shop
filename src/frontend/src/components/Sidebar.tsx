@@ -1,4 +1,11 @@
-import { LayoutDashboard, Package, Settings, Users, X } from "lucide-react";
+import {
+  LayoutDashboard,
+  Package,
+  Settings,
+  UserCog,
+  Users,
+  X,
+} from "lucide-react";
 import type { NavTab, Screen } from "../App";
 
 interface SidebarProps {
@@ -16,21 +23,27 @@ const NAV_ITEMS: {
 }[] = [
   {
     label: "Dashboard",
-    tab: "home",
+    tab: "dashboard",
     icon: <LayoutDashboard size={20} />,
-    screen: { id: "home" },
+    screen: { id: "dashboard" },
   },
   {
-    label: "Customers",
-    tab: "home",
+    label: "Udhar",
+    tab: "udhar",
     icon: <Users size={20} />,
-    screen: { id: "home" },
+    screen: { id: "udhar" },
   },
   {
     label: "Products",
     tab: "products",
     icon: <Package size={20} />,
     screen: { id: "products" },
+  },
+  {
+    label: "Customers",
+    tab: "customers",
+    icon: <UserCog size={20} />,
+    screen: { id: "customers" },
   },
   {
     label: "Settings",
@@ -53,7 +66,7 @@ export function Sidebar({
 
   return (
     <>
-      {/* Backdrop -- use button for accessibility */}
+      {/* Backdrop */}
       <button
         type="button"
         className="fixed inset-0 z-50 bg-black/50 transition-opacity duration-300 cursor-default"
@@ -96,29 +109,22 @@ export function Sidebar({
 
         {/* Nav items */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
-            const isActive =
-              item.tab === "home"
-                ? activeTab === "home" && item.label === "Dashboard"
-                : activeTab === item.tab;
-
-            return (
-              <button
-                key={item.label}
-                type="button"
-                data-ocid={`sidebar.${item.label.toLowerCase()}.link`}
-                onClick={() => handleNav(item.screen)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors min-h-[48px] ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            );
-          })}
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              data-ocid={`sidebar.${item.label.toLowerCase()}.link`}
+              onClick={() => handleNav(item.screen)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors min-h-[48px] ${
+                activeTab === item.tab
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          ))}
         </nav>
 
         {/* Footer */}
