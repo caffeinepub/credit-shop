@@ -77,7 +77,7 @@ actor {
   let transactions = Map.empty<Nat, Transaction>();
 
   // Customer Management
-  public shared ({ caller }) func addCustomer(name : Text, mobile : Text) : async ?Customer {
+  public shared func addCustomer(name : Text, mobile : Text) : async ?Customer {
     if (mobile.size() == 0) {
       return null;
     };
@@ -99,7 +99,7 @@ actor {
     ?customer;
   };
 
-  public shared ({ caller }) func updateCustomer(id : Nat, name : Text, mobile : Text) : async Bool {
+  public shared func updateCustomer(id : Nat, name : Text, mobile : Text) : async Bool {
     if (mobile.size() == 0) { return false };
 
     let mobileExists = customers.values().any(func(c) { c.mobile == mobile and c.id != id });
@@ -122,22 +122,22 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deleteCustomer(id : Nat) : async Bool {
+  public shared func deleteCustomer(id : Nat) : async Bool {
     if (not customers.containsKey(id)) { return false };
     customers.remove(id);
     true;
   };
 
-  public query ({ caller }) func getAllCustomers() : async [CustomerBalance] {
+  public query func getAllCustomers() : async [CustomerBalance] {
     customers.values().map(getCustomerBalance).toArray();
   };
 
-  public query ({ caller }) func searchCustomers(term : Text) : async [Customer] {
+  public query func searchCustomers(term : Text) : async [Customer] {
     customers.values().filter(func(c) { c.name.contains(#text term) or c.mobile.contains(#text term) }).toArray();
   };
 
   // Product Management
-  public shared ({ caller }) func addProduct(name : Text, price : Float, barcode : Text) : async ?Product {
+  public shared func addProduct(name : Text, price : Float, barcode : Text) : async ?Product {
     let barcodeExists = products.values().any(func(p) { p.barcode == barcode });
     if (barcodeExists) {
       return null;
@@ -156,7 +156,7 @@ actor {
     ?product;
   };
 
-  public shared ({ caller }) func updateProduct(id : Nat, name : Text, price : Float, barcode : Text) : async Bool {
+  public shared func updateProduct(id : Nat, name : Text, price : Float, barcode : Text) : async Bool {
     switch (products.get(id)) {
       case (null) { false };
       case (?existing) {
@@ -173,17 +173,17 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deleteProduct(id : Nat) : async Bool {
+  public shared func deleteProduct(id : Nat) : async Bool {
     if (not products.containsKey(id)) { return false };
     products.remove(id);
     true;
   };
 
-  public query ({ caller }) func getAllProducts() : async [Product] {
+  public query func getAllProducts() : async [Product] {
     products.values().toArray();
   };
 
-  public shared ({ caller }) func bulkImportProducts(productList : [Product]) : async (Nat, Nat) {
+  public shared func bulkImportProducts(productList : [Product]) : async (Nat, Nat) {
     var added = 0;
     var skipped = 0;
     for (product in productList.values()) {
@@ -206,13 +206,13 @@ actor {
     (added, skipped);
   };
 
-  public query ({ caller }) func searchProducts(term : Text) : async [Product] {
+  public query func searchProducts(term : Text) : async [Product] {
     let filteredProducts = products.values().filter(func(p) { p.name.contains(#text term) or p.barcode.contains(#text term) });
     filteredProducts.toArray().sort(ProductSearch.compareById);
   };
 
   // Transaction Management
-  public shared ({ caller }) func addTransaction(customerId : Nat, productName : Text, note : Text, amount : Float, txType : Text) : async ?Transaction {
+  public shared func addTransaction(customerId : Nat, productName : Text, note : Text, amount : Float, txType : Text) : async ?Transaction {
     switch (customers.get(customerId)) {
       case (null) { null };
       case (_) {
@@ -234,7 +234,7 @@ actor {
   };
 
   // New batched transactions
-  public shared ({ caller }) func addBatchTransaction(customerId : Nat, totalAmount : Float, itemsJson : Text, note : Text) : async ?Transaction {
+  public shared func addBatchTransaction(customerId : Nat, totalAmount : Float, itemsJson : Text, note : Text) : async ?Transaction {
     switch (customers.get(customerId)) {
       case (null) { null };
       case (_) {
@@ -255,13 +255,13 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deleteTransaction(id : Nat) : async Bool {
+  public shared func deleteTransaction(id : Nat) : async Bool {
     if (not transactions.containsKey(id)) { return false };
     transactions.remove(id);
     true;
   };
 
-  public query ({ caller }) func getTransactionsForCustomer(customerId : Nat) : async [Transaction] {
+  public query func getTransactionsForCustomer(customerId : Nat) : async [Transaction] {
     transactions.values().filter(func(t) { t.customerId == customerId }).toArray().sort();
   };
 
@@ -269,7 +269,7 @@ actor {
   func getCustomerBalance(customer : Customer) : CustomerBalance {
     var totalUdhaar = 0.0;
     var totalPaid = 0.0;
-    var lastPaymentDate = 0;
+    var lastPaymentDate : Int = 0;
 
     for (transaction in transactions.values()) {
       if (transaction.customerId == customer.id) {
@@ -277,8 +277,8 @@ actor {
           totalUdhaar += transaction.amount;
         } else if (transaction.txType == "payment") {
           totalPaid += transaction.amount;
-          if (transaction.timestamp > Int.fromNat(lastPaymentDate)) {
-            lastPaymentDate := transaction.timestamp.toNat();
+          if (transaction.timestamp > lastPaymentDate) {
+            lastPaymentDate := transaction.timestamp;
           };
         };
       };
@@ -288,12 +288,12 @@ actor {
       totalUdhaar;
       totalPaid;
       remainingBalance = totalUdhaar - totalPaid;
-      lastPaymentDate = Int.fromNat(lastPaymentDate);
+      lastPaymentDate;
       customer;
     };
   };
 
-  public query ({ caller }) func getCustomerBalanceSummary(customerId : Nat) : async ?CustomerBalance {
+  public query func getCustomerBalanceSummary(customerId : Nat) : async ?CustomerBalance {
     let customer = customers.get(customerId);
     switch (customer) {
       case (null) { null };
@@ -301,20 +301,20 @@ actor {
     };
   };
 
-  public query ({ caller }) func getCustomersSortedByBalance() : async [CustomerBalance] {
+  public query func getCustomersSortedByBalance() : async [CustomerBalance] {
     customers.values().map(getCustomerBalance).toArray().sort(
       func(a, b) { Float.compare(b.remainingBalance, a.remainingBalance) }
     );
   };
 
   // Additional Queries
-  public query ({ caller }) func getHighBalanceCustomers(threshold : Float) : async [CustomerBalance] {
+  public query func getHighBalanceCustomers(threshold : Float) : async [CustomerBalance] {
     customers.values().map(getCustomerBalance).filter(
       func(cb) { cb.remainingBalance > threshold }
     ).toArray();
   };
 
-  public query ({ caller }) func getInactiveCustomers(days : Int) : async [CustomerBalance] {
+  public query func getInactiveCustomers(days : Int) : async [CustomerBalance] {
     let now = Time.now();
     let filteredCustomers = customers.values().map(getCustomerBalance).filter(
       func(cb) {

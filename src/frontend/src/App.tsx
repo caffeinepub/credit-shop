@@ -120,7 +120,7 @@ export default function App() {
           </button>
         </nav>
       )}
-      <Toaster position="top-center" />
+      <Toaster position="bottom-center" />
     </div>
   );
 }

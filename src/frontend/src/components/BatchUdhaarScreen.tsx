@@ -5,17 +5,24 @@ import {
   Camera,
   CameraOff,
   Loader2,
+  MessageCircle,
   Minus,
   Plus,
   ScanLine,
   Trash2,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Product } from "../backend.d";
 import { useCamera } from "../camera/useCamera";
 import { useCSVProducts } from "../hooks/useCSVProducts";
-import { useAddBatchTransaction, useAllProducts } from "../hooks/useQueries";
+import {
+  useAddBatchTransaction,
+  useAddProduct,
+  useAllProducts,
+  useCustomerBalance,
+} from "../hooks/useQueries";
 import { formatCurrency } from "../utils/format";
 
 interface SessionItem {
@@ -68,9 +75,48 @@ function csvToProduct(csv: {
   };
 }
 
+// WhatsApp receipt generator
+function buildWhatsAppMessage(
+  customerName: string,
+  items: SessionItem[],
+  total: number,
+  remainingBalance: number,
+  currencySymbol: string,
+): string {
+  const date = new Date().toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const lines = [
+    "*Udhaar Receipt*",
+    `Customer: ${customerName}`,
+    `Date: ${date}`,
+    "",
+    "*Items:*",
+    ...items.map(
+      (i) =>
+        `• ${i.name} × ${i.qty} = ${currencySymbol}${(i.price * i.qty).toFixed(2)}`,
+    ),
+    "",
+    `*Total Added: ${currencySymbol}${total.toFixed(2)}*`,
+    `Remaining Balance: ${currencySymbol}${remainingBalance.toFixed(2)}`,
+  ];
+  return lines.join("\n");
+}
+
+function openWhatsApp(mobile: string, message: string) {
+  // Strip non-digits and leading zeros; keep '+' for country code
+  const cleaned = mobile.replace(/\s+/g, "");
+  const num = cleaned.startsWith("+") ? cleaned.slice(1) : cleaned;
+  const encoded = encodeURIComponent(message);
+  window.open(`https://wa.me/${num}?text=${encoded}`, "_blank");
+}
+
 export function BatchUdhaarScreen({
   customerId,
   customerName,
+  customerMobile,
   onClose,
   onSaved,
 }: Props) {
@@ -79,11 +125,41 @@ export function BatchUdhaarScreen({
   );
   const [scannerOpen, setScannerOpen] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
+  const [scanReady, setScanReady] = useState(true);
+  const [addManuallyOpen, setAddManuallyOpen] = useState(false);
+  const [addManuallyForm, setAddManuallyForm] = useState({
+    barcode: "",
+    name: "",
+    price: "",
+  });
+  const [addManuallyLoading, setAddManuallyLoading] = useState(false);
+
+  // WhatsApp prompt state
+  const [whatsappPrompt, setWhatsappPrompt] = useState<{
+    show: boolean;
+    savedItems: SessionItem[];
+    savedTotal: number;
+  } | null>(null);
+  // Phone prompt when no mobile on file
+  const [addPhonePrompt, setAddPhonePrompt] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [resolvedMobile, setResolvedMobile] = useState(customerMobile);
+
   const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastScanRef = useRef<{ barcode: string; unlocksAt: number } | null>(
+    null,
+  );
 
   const { data: allProducts } = useAllProducts();
   const { csvProducts } = useCSVProducts();
   const addBatchTx = useAddBatchTransaction();
+  const addProductMutation = useAddProduct();
+  const { data: balanceSummary } = useCustomerBalance(customerId);
+
+  const currencySymbol =
+    localStorage.getItem("currencySymbol") ||
+    (navigator.language.startsWith("ar") ? "د.إ" : "₹");
 
   const {
     isActive,
@@ -95,6 +171,11 @@ export function BatchUdhaarScreen({
     canvasRef,
     isSupported,
   } = useCamera({ facingMode: "environment", width: 640, height: 480 });
+
+  // Keep resolvedMobile in sync if prop changes
+  useEffect(() => {
+    setResolvedMobile(customerMobile);
+  }, [customerMobile]);
 
   // Persist session on change
   useEffect(() => {
@@ -121,6 +202,11 @@ export function BatchUdhaarScreen({
     });
   }, []);
 
+  const openAddManually = useCallback((barcode: string) => {
+    setAddManuallyForm({ barcode, name: "", price: "" });
+    setAddManuallyOpen(true);
+  }, []);
+
   // BarcodeDetector scanning loop
   useEffect(() => {
     if (scannerOpen && isActive) {
@@ -144,17 +230,39 @@ export function BatchUdhaarScreen({
           const barcodes = await detector.detect(video);
           if (barcodes.length > 0) {
             const barcode = barcodes[0].rawValue as string;
-            // Try backend products first, then CSV fallback
+
+            // Cooldown check — same barcode within 2s → ignore
+            const now = Date.now();
+            if (
+              lastScanRef.current?.barcode === barcode &&
+              now < lastScanRef.current.unlocksAt
+            ) {
+              return;
+            }
+
             const found =
               allProducts?.find((p) => p.barcode === barcode) ??
               (csvProducts.find((p) => p.barcode === barcode)
                 ? csvToProduct(csvProducts.find((p) => p.barcode === barcode)!)
                 : undefined);
+
             if (found) {
               addOrIncrement(found);
               toast.success(`Added: ${found.name}`, { duration: 1000 });
+              lastScanRef.current = { barcode, unlocksAt: now + 2000 };
+              setScanReady(false);
+              setTimeout(() => setScanReady(true), 2000);
             } else {
-              toast.error("Product not found", { duration: 1500 });
+              // Non-blocking bottom toast — tapping opens add manually
+              toast("Product not found. Tap to add.", {
+                duration: 3000,
+                action: {
+                  label: "Add",
+                  onClick: () => openAddManually(barcode),
+                },
+              });
+              // Cooldown so same not-found barcode doesn't spam
+              lastScanRef.current = { barcode, unlocksAt: now + 2000 };
             }
           }
         } catch (_e) {
@@ -172,6 +280,7 @@ export function BatchUdhaarScreen({
     allProducts,
     csvProducts,
     addOrIncrement,
+    openAddManually,
   ]);
 
   const openScanner = async () => {
@@ -210,7 +319,6 @@ export function BatchUdhaarScreen({
   const handleManualAdd = () => {
     const bc = manualBarcode.trim();
     if (!bc) return;
-    // Try backend products first, then CSV fallback
     const backendFound = allProducts?.find((p) => p.barcode === bc);
     if (backendFound) {
       addOrIncrement(backendFound);
@@ -222,8 +330,53 @@ export function BatchUdhaarScreen({
       addOrIncrement(csvToProduct(csvFound));
       setManualBarcode("");
     } else {
-      toast.error("Product not found");
+      openAddManually(bc);
+      setManualBarcode("");
     }
+  };
+
+  const handleSaveManually = async () => {
+    const { barcode, name, price } = addManuallyForm;
+    if (!name.trim()) {
+      toast.error("Product name is required");
+      return;
+    }
+    const parsedPrice = Number.parseFloat(price);
+    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+      toast.error("Enter a valid price");
+      return;
+    }
+    setAddManuallyLoading(true);
+    try {
+      const result = await addProductMutation.mutateAsync({
+        name: name.trim(),
+        price: parsedPrice,
+        barcode: barcode.trim(),
+      });
+      if (result) {
+        addOrIncrement(result);
+        toast.success(`"${name.trim()}" added to batch & saved to products`);
+      } else {
+        const tempProduct: Product = {
+          id: 0n,
+          name: name.trim(),
+          price: parsedPrice,
+          barcode: barcode.trim(),
+          createdAt: 0n,
+        };
+        addOrIncrement(tempProduct);
+        toast.warning("Barcode already in database — added to batch only");
+      }
+      setAddManuallyOpen(false);
+    } catch (_e) {
+      toast.error("Failed to save product");
+    } finally {
+      setAddManuallyLoading(false);
+    }
+  };
+
+  const dismissSheet = () => {
+    if (!addManuallyLoading) setAddManuallyOpen(false);
   };
 
   const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -233,7 +386,9 @@ export function BatchUdhaarScreen({
       toast.error("No items to save");
       return;
     }
-    const itemsPayload = items.map((i) => ({
+    const snapshot = [...items];
+    const snapshotTotal = total;
+    const itemsPayload = snapshot.map((i) => ({
       name: i.name,
       price: i.price,
       qty: i.qty,
@@ -242,16 +397,67 @@ export function BatchUdhaarScreen({
     }));
     const result = await addBatchTx.mutateAsync({
       customerId,
-      totalAmount: total,
+      totalAmount: snapshotTotal,
       itemsJson: JSON.stringify(itemsPayload),
       note: "",
     });
     if (result) {
       clearSession(customerId);
-      toast.success(`Udhaar saved — ${formatCurrency(total)}`);
-      onSaved();
+      toast.success(`Udhaar saved — ${formatCurrency(snapshotTotal)}`);
+      // Show WhatsApp prompt
+      setWhatsappPrompt({
+        show: true,
+        savedItems: snapshot,
+        savedTotal: snapshotTotal,
+      });
     } else {
       toast.error("Failed to save udhaar");
+    }
+  };
+
+  // Handle WhatsApp Yes
+  const handleWhatsAppYes = () => {
+    if (!resolvedMobile) {
+      // No phone — ask to add
+      setAddPhonePrompt(true);
+    } else {
+      sendWhatsApp(resolvedMobile);
+    }
+  };
+
+  const sendWhatsApp = (mobile: string) => {
+    if (!whatsappPrompt) return;
+    const balance = balanceSummary
+      ? balanceSummary.remainingBalance
+      : whatsappPrompt.savedTotal;
+    const message = buildWhatsAppMessage(
+      customerName,
+      whatsappPrompt.savedItems,
+      whatsappPrompt.savedTotal,
+      balance,
+      currencySymbol,
+    );
+    openWhatsApp(mobile, message);
+    setWhatsappPrompt(null);
+    onSaved();
+  };
+
+  const handleWhatsAppNo = () => {
+    setWhatsappPrompt(null);
+    onSaved();
+  };
+
+  const handleSavePhone = async () => {
+    const trimmed = phoneInput.trim();
+    if (!trimmed) return;
+    setPhoneSaving(true);
+    try {
+      // We optimistically resolve so WhatsApp can open even if update lags
+      setResolvedMobile(trimmed);
+      setAddPhonePrompt(false);
+      sendWhatsApp(trimmed);
+    } finally {
+      setPhoneSaving(false);
     }
   };
 
@@ -301,7 +507,6 @@ export function BatchUdhaarScreen({
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
           <canvas ref={canvasRef} style={{ display: "none" }} />
-          {/* Scan overlay */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-44 h-28 border-2 border-white/60 rounded-lg relative">
               <div className="absolute inset-x-0 top-1/2 h-0.5 bg-primary/80 animate-pulse" />
@@ -322,7 +527,7 @@ export function BatchUdhaarScreen({
           {isActive && !camError && (
             <div className="absolute bottom-2 left-0 right-0 text-center">
               <span className="bg-black/50 text-white text-xs px-3 py-1 rounded-full">
-                Scanning… point at barcode
+                {scanReady ? "Scanning… point at barcode" : "⏳ Ready to scan…"}
               </span>
             </div>
           )}
@@ -468,6 +673,217 @@ export function BatchUdhaarScreen({
           Cancel
         </button>
       </div>
+
+      {/* Add Manually Bottom Sheet */}
+      {addManuallyOpen && (
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end">
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/50 cursor-default"
+            onClick={dismissSheet}
+          />
+          <div className="relative bg-background rounded-t-2xl shadow-2xl px-4 pt-4 pb-8">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-4" />
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold text-foreground">
+                Add New Product
+              </h2>
+              <button
+                type="button"
+                data-ocid="batch_udhaar.add_manually.close_button"
+                onClick={dismissSheet}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label
+                  htmlFor="am-barcode"
+                  className="text-xs font-medium text-muted-foreground mb-1 block"
+                >
+                  Barcode
+                </label>
+                <Input
+                  id="am-barcode"
+                  data-ocid="batch_udhaar.add_manually_barcode.input"
+                  value={addManuallyForm.barcode}
+                  onChange={(e) =>
+                    setAddManuallyForm((f) => ({
+                      ...f,
+                      barcode: e.target.value,
+                    }))
+                  }
+                  placeholder="Barcode"
+                  className="h-11"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="am-name"
+                  className="text-xs font-medium text-muted-foreground mb-1 block"
+                >
+                  Product Name <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  id="am-name"
+                  data-ocid="batch_udhaar.add_manually_name.input"
+                  // biome-ignore lint/a11y/noAutofocus: intentional for mobile UX
+                  autoFocus
+                  value={addManuallyForm.name}
+                  onChange={(e) =>
+                    setAddManuallyForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  placeholder="e.g. Parle-G Biscuit"
+                  className="h-11"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="am-price"
+                  className="text-xs font-medium text-muted-foreground mb-1 block"
+                >
+                  Price
+                </label>
+                <Input
+                  id="am-price"
+                  data-ocid="batch_udhaar.add_manually_price.input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={addManuallyForm.price}
+                  onChange={(e) =>
+                    setAddManuallyForm((f) => ({
+                      ...f,
+                      price: e.target.value,
+                    }))
+                  }
+                  placeholder="0.00"
+                  className="h-11"
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              data-ocid="batch_udhaar.add_manually.submit_button"
+              className="w-full h-12 text-sm font-bold mt-5"
+              onClick={handleSaveManually}
+              disabled={addManuallyLoading || !addManuallyForm.name.trim()}
+            >
+              {addManuallyLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              {addManuallyLoading ? "Saving…" : "Save & Add to Batch"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp Receipt Prompt */}
+      {whatsappPrompt?.show && !addPhonePrompt && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center">
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="absolute inset-0 bg-black/50"
+            onClick={handleWhatsAppNo}
+          />
+          <div className="relative bg-background rounded-t-2xl shadow-2xl px-5 pt-5 pb-8 w-full max-w-md">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-5" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                <MessageCircle size={20} className="text-green-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-foreground">
+                  Send WhatsApp receipt?
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {formatCurrency(whatsappPrompt.savedTotal)} ·{" "}
+                  {whatsappPrompt.savedItems.length} item
+                  {whatsappPrompt.savedItems.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-12"
+                onClick={handleWhatsAppNo}
+              >
+                No, skip
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white font-bold"
+                onClick={handleWhatsAppYes}
+              >
+                Yes, send
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Phone Prompt (shown when customer has no phone) */}
+      {addPhonePrompt && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center">
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="absolute inset-0 bg-black/50"
+            onClick={() => {
+              setAddPhonePrompt(false);
+              handleWhatsAppNo();
+            }}
+          />
+          <div className="relative bg-background rounded-t-2xl shadow-2xl px-5 pt-5 pb-8 w-full max-w-md">
+            <div className="w-10 h-1 rounded-full bg-muted-foreground/30 mx-auto mb-5" />
+            <h2 className="text-base font-bold text-foreground mb-1">
+              No phone number on file
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Add {customerName}'s number to send WhatsApp receipt.
+            </p>
+            <Input
+              // biome-ignore lint/a11y/noAutofocus: intentional for mobile UX
+              autoFocus
+              type="tel"
+              placeholder="e.g. +91 9876543210"
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              className="h-12 mb-4"
+            />
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 h-12"
+                onClick={() => {
+                  setAddPhonePrompt(false);
+                  handleWhatsAppNo();
+                }}
+              >
+                Skip
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white font-bold"
+                disabled={!phoneInput.trim() || phoneSaving}
+                onClick={handleSavePhone}
+              >
+                {phoneSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save & Send
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
