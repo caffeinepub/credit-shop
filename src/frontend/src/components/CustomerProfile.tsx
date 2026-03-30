@@ -17,19 +17,23 @@ import {
 import {
   AlertTriangle,
   ArrowLeft,
+  Camera,
   Clock,
   CreditCard,
   History,
+  Loader2,
   MoreVertical,
   Pencil,
   Phone,
   Plus,
+  QrCode,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
 import type { CustomerBalance } from "../backend.d";
+import { useCustomerPhoto } from "../hooks/useCustomerPhoto";
 import { useCustomerBalance, useDeleteCustomer } from "../hooks/useQueries";
 import {
   formatCurrency,
@@ -38,6 +42,7 @@ import {
   isInactive,
 } from "../utils/format";
 import { AddPaymentSheet } from "./AddPaymentSheet";
+import { CustomerBarcodeSheet } from "./CustomerBarcodeSheet";
 import { EditCustomerSheet } from "./EditCustomerSheet";
 
 interface Props {
@@ -54,10 +59,16 @@ export function CustomerProfile({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [barcodeOpen, setBarcodeOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const deleteCustomer = useDeleteCustomer();
   const { data: freshData } = useCustomerBalance(initialCb.customer.id);
   const cb = freshData || initialCb;
+
+  const { photoUrl, uploadPhoto, isUploading } = useCustomerPhoto(
+    cb.customer.id,
+  );
 
   const settings = getSettings();
   const isHigh = cb.remainingBalance > settings.threshold;
@@ -67,6 +78,19 @@ export function CustomerProfile({
     await deleteCustomer.mutateAsync(cb.customer.id);
     toast.success("Customer deleted");
     onBack();
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await uploadPhoto(file);
+      toast.success("Photo updated!");
+    } catch (_err) {
+      toast.error("Failed to upload photo");
+    }
+    // Reset input so same file can be selected again
+    e.target.value = "";
   };
 
   return (
@@ -112,12 +136,47 @@ export function CustomerProfile({
 
         {/* Avatar + Name */}
         <div className="flex flex-col items-center">
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold mb-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
-          >
-            {getInitials(cb.customer.name)}
+          {/* Photo / Avatar */}
+          <div className="relative mb-3">
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={cb.customer.name}
+                className="w-16 h-16 rounded-full object-cover"
+              />
+            ) : (
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold"
+                style={{ backgroundColor: "rgba(255,255,255,0.15)" }}
+              >
+                {getInitials(cb.customer.name)}
+              </div>
+            )}
+            {/* Camera overlay */}
+            <button
+              type="button"
+              data-ocid="profile.photo.upload_button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-md"
+            >
+              {isUploading ? (
+                <Loader2 size={12} className="animate-spin text-gray-600" />
+              ) : (
+                <Camera size={12} className="text-gray-600" />
+              )}
+            </button>
           </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handlePhotoChange}
+          />
+
           <h2 className="text-white text-lg font-bold">{cb.customer.name}</h2>
           <p className="text-white/60 text-sm mt-0.5">{cb.customer.mobile}</p>
           {(isHigh || inactive) && (
@@ -209,6 +268,15 @@ export function CustomerProfile({
             <Phone size={20} className="text-muted-foreground" />
             Call Customer
           </a>
+          <button
+            type="button"
+            data-ocid="profile.barcode.button"
+            className="action-btn bg-card border border-border text-foreground col-span-2"
+            onClick={() => setBarcodeOpen(true)}
+          >
+            <QrCode size={20} className="text-muted-foreground" />
+            Customer Barcode
+          </button>
         </div>
       </div>
 
@@ -222,6 +290,11 @@ export function CustomerProfile({
       <EditCustomerSheet
         open={editOpen}
         onOpenChange={setEditOpen}
+        customer={cb.customer}
+      />
+      <CustomerBarcodeSheet
+        open={barcodeOpen}
+        onOpenChange={setBarcodeOpen}
         customer={cb.customer}
       />
 

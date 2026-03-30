@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Bell, DollarSign, Info, Shield } from "lucide-react";
+import { Bell, DollarSign, Info, Menu, Shield } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Screen } from "../App";
@@ -36,9 +36,10 @@ function detectDefaultCurrency(): string {
 
 interface Props {
   navigate: (s: Screen) => void;
+  onOpenSidebar: () => void;
 }
 
-export function SettingsScreen({ navigate: _navigate }: Props) {
+export function SettingsScreen({ navigate: _navigate, onOpenSidebar }: Props) {
   const [threshold, setThreshold] = useState(
     localStorage.getItem("threshold") || "1000",
   );
@@ -74,8 +75,21 @@ export function SettingsScreen({ navigate: _navigate }: Props) {
     <div className="screen-container">
       {/* Header */}
       <div className="app-header px-4 pt-12 pb-6">
-        <h1 className="text-white text-xl font-bold">Settings</h1>
-        <p className="text-white/60 text-sm mt-1">Configure app behaviour</p>
+        <div className="flex items-center gap-3 mb-1">
+          <button
+            type="button"
+            data-ocid="settings.sidebar.toggle"
+            onClick={onOpenSidebar}
+            className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white hover:bg-white/20 flex-shrink-0"
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
+          <div>
+            <h1 className="text-white text-xl font-bold">Settings</h1>
+            <p className="text-white/60 text-sm">Configure app behaviour</p>
+          </div>
+        </div>
       </div>
 
       <div className="scroll-area px-4 py-5 space-y-5 pb-8">

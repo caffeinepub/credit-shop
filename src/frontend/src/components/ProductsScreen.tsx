@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   FileText,
   Loader2,
+  Menu,
   Pencil,
   Plus,
   Search,
@@ -44,6 +45,7 @@ import { formatCurrency } from "../utils/format";
 
 interface Props {
   navigate: (s: Screen) => void;
+  onOpenSidebar: () => void;
 }
 
 type CSVRow = { name: string; price: number; barcode: string };
@@ -92,7 +94,7 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-export function ProductsScreen({ navigate: _navigate }: Props) {
+export function ProductsScreen({ navigate: _navigate, onOpenSidebar }: Props) {
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
@@ -234,7 +236,18 @@ export function ProductsScreen({ navigate: _navigate }: Props) {
       {/* Header */}
       <div className="app-header px-4 pt-12 pb-5">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-white text-xl font-bold">Products</h1>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              data-ocid="products.sidebar.toggle"
+              onClick={onOpenSidebar}
+              className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white hover:bg-white/20 flex-shrink-0"
+              aria-label="Open menu"
+            >
+              <Menu size={20} />
+            </button>
+            <h1 className="text-white text-xl font-bold">Products</h1>
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
